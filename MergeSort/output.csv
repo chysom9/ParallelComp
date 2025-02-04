@@ -1,0 +1,10 @@
+Sorting time for: 10 elements took: 0 ms
+Sorting time for: 100 elements took: 0 ms
+Sorting time for: 1000 elements took: 0 ms
+Sorting time for: 10000 elements took: 1 ms
+Sorting time for: 100000 elements took: 11 ms
+Sorting time for: 1000000 elements took: 126 ms
+Sorting time for: 10000000 elements took: 1390 ms
+Sorting time for: 100000000 elements took: 15152 ms
+/var/spool/slurm/slurmd/job06651/slurm_script: line 10: 123846 Killed                  ./main 1000000000
+slurmstepd: error: Detected 1 oom_kill event in StepId=6651.batch. Some of the step tasks have been OOM Killed.
