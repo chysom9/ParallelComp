@@ -79,29 +79,15 @@ int main(int argc, char* argv[])
     }
     int size = atoi(argv[1]);
     int* arr = new int[size];
-  
-    for(int i= 0; i < size; i ++) arr[i] = rand() % 100;
-    cout << "Unsorted Array: ";
-    for (int i = 0; i < size; i++)
-    {
-        cout << arr[i] << " ";
-    }
-
-    cout << endl;\
     auto start = high_resolution_clock::now();
     mergeSort(arr, size);
     auto stop = high_resolution_clock::now();
 
     auto duration = duration_cast<milliseconds>(stop - start);
-    cout << "Sorted Array: ";
-    for (int i = 0; i < size; i++)
-    {
-        cout << arr[i] << " ";
-    }
-    cout << endl;
+    
 
-    cout << "Sort Time: " << duration.count() << " ms" << endl;
-    cerr << "Sort Time: " << duration.count() << " ms" << endl;
+    
+    cerr << "Sorting time for: " << size <<" elements took: " << duration.count() << " ms" << endl;
 
     return 0;
 }
