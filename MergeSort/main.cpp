@@ -69,12 +69,17 @@ void mergeSort(int arr[], int len)
     delete[] rightArr;
 }
 
-int main()
+int main(int argc, char* argv[])
 {
-    cout << "Enter teh amount of numbers you want in the array";
-    int size;
-    cin >> size;
-    int *arr = new int[size];
+
+    if (argc != 2 ){
+        cerr << "Usage: " << argv[0] << "<array_size" << endl;
+        return 1;
+
+    }
+    int size = atoi(argv[1]);
+    int* arr = new int[size];
+  
     for(int i= 0; i < size; i ++) arr[i] = rand() % 100;
     cout << "Unsorted Array: ";
     for (int i = 0; i < size; i++)
