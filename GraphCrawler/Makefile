@@ -1,6 +1,6 @@
 # Compiler and flags
 CXX = g++
-CXXFLAGS = -std=c++17 -I /Users/chi/Desktop/Spring2025/ParallelComp/rapidjson/include/rapidjson
+CXXFLAGS = -std=c++17 -I /Users/chi/Desktop/Spring2025/ParallelComp/rapidjson/include
 
 # Linker flags
 LDFLAGS = -lcurl

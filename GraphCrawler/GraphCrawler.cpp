@@ -1,5 +1,5 @@
-#include "../rapidjson/include/rapidjson/document.h"
-#include "../rapidjson/include/rapidjson/reader.h"
+#include <rapidjson/document.h>
+#include <rapidjson/reader.h>
 #include <iostream>
 #include <string>
 #include <queue>
