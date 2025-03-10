@@ -1,0 +1,5 @@
+Note: The MAKEFILE has already been called in the script.
+* Run the script using any desired name.
+* For every extra depth added, add 1 minute to the run time when running the script.
+* Always surround the actor/movie with quotes ("").
+
