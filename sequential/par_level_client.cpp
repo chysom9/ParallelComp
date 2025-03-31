@@ -6,10 +6,15 @@
 #include <cstdlib>
 #include <curl/curl.h>
 #include <stdexcept>
-#include "rapidjson/error/error.h"
 #include "rapidjson/reader.h"
+#include "rapidjson/error/error.h"
+#include <mutex>
+#include <thread>
 
 
+const int MAX_THREADS = 8;
+
+//dont change this structure
 struct ParseException : std::runtime_error, rapidjson::ParseResult {
     ParseException(rapidjson::ParseErrorCode code, const char* msg, size_t offset) : 
         std::runtime_error(msg), 
@@ -92,7 +97,7 @@ vector<string> get_neighbors(const string& json_str) {
       
       if (doc.HasMember("neighbors") && doc["neighbors"].IsArray()) {
         for (const auto& neighbor : doc["neighbors"].GetArray())
-	  neighbors.push_back(neighbor.GetString());
+	        neighbors.push_back(neighbor.GetString());
       }
     } catch (const ParseException& e) {
       std::cerr<<"Error while parsing JSON: "<<json_str<<std::endl;
@@ -103,38 +108,29 @@ vector<string> get_neighbors(const string& json_str) {
 
 // BFS Traversal Function
 vector<vector<string>> bfs(CURL* curl, const string& start, int depth) {
-  vector<vector<string>> levels;
-  unordered_set<string> visited;
-  
-  levels.push_back({start});
-  visited.insert(start);
+    vector<vector<string>> levels = {{start}};
+    unordered_set<string> visited = {start};
+    mutex m;
 
-  for (int d = 0;  d < depth; d++) {
-    if (debug)
-      std::cout<<"starting level: "<<d<<"\n";
-    levels.push_back({});
-    for (string& s : levels[d]) {
-      try {
-	if (debug)
-	  std::cout<<"Trying to expand"<<s<<"\n";
-	for (const auto& neighbor : get_neighbors(fetch_neighbors(curl, s))) {
-	  if (debug)
-	    std::cout<<"neighbor "<<neighbor<<"\n";
-	  if (!visited.count(neighbor)) {
-	    visited.insert(neighbor);
-	    levels[d+1].push_back(neighbor);
-	  }
-	}
-      } catch (const ParseException& e) {
-	std::cerr<<"Error while fetching neighbors of: "<<s<<std::endl;
-	throw e;
-      }
+    for (int d = 0; d < depth; d++) {
+        vector<thread> threads;
+        levels.push_back({});
+
+        for (const auto& node : levels[d]) {
+            threads.emplace_back([&, node]() {
+                if (CURL* local_curl = curl_easy_init()) {
+                    for (const auto& neighbor : get_neighbors(fetch_neighbors(local_curl, node))) {
+                        lock_guard<mutex> lock(m);
+                        if (visited.insert(neighbor).second) levels[d + 1].push_back(neighbor);
+                    }
+                    curl_easy_cleanup(local_curl);
+                }
+            });
+        }
+        for (auto& t : threads) t.join();
     }
-  }
-  
-  return levels;
+    return levels;
 }
-
 int main(int argc, char* argv[]) {
     if (argc != 3) {
         cerr << "Usage: " << argv[0] << " <node_name> <depth>\n";
