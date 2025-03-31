@@ -1,4 +1,4 @@
-CXXFLAGS = -std=c++17 -I /Users/chi/Desktop/Spring2025/ParallelComp/rapidjson/include
+CXXFLAGS = -std=c++17 -I /users/cnwosu2/ParallelComp/rapidjson/include
 LDFLAGS=-lcurl
 LD=g++
 CC=g++
