@@ -1,6 +1,10 @@
 # Compiler and flags
 CXX = g++
+<<<<<<< HEAD
 CXXFLAGS = -std=c++17 -I /u sers/cnwosu2/ParallelComp/rapidjson/include
+=======
+CXXFLAGS = -std=c++17 -I /users/cnwosu2/ParallelComp/rapidjson
+>>>>>>> 58a9893717612a279998a43bc05edb23821e4b9a
 
 # Linker flags
 LDFLAGS = -lcurl
