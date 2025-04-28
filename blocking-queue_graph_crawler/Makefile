@@ -1,14 +1,8 @@
-CXX= g++
-CXXFLAGS= -std=c++17 -Wall -I/usr/local/include
-LDFLAGS= -lcurl -pthread
+CXX = g++
+CXXFLAGS = -std=c++17 -Wall -pthread -I/rapidjson/include
 
-TARGET= main
-SRCS= main.cpp
-
-all: $(TARGET)
-
-$(TARGET): $(SRCS)
-	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS)
+all: main.cpp
+	$(CXX) $(CXXFLAGS) main.cpp -o exec -lcurl
 
 clean:
-	rm -f main *.o output/*.txt
+	rm -f exec *.o output/*.txt
