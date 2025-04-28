@@ -1,3 +1,4 @@
+#include "header.hpp"
 #include <iostream>
 #include <string>
 #include <vector>
@@ -14,32 +15,7 @@
 using namespace std;
 using namespace rapidjson;
 
-// ——— Simple BlockingQueue<T> ———
-template<typename T>
-class BlockingQueue {
-    queue<T>       q;
-    mutex          m;
-    condition_variable cv;
-    bool           done{false};
-public:
-    void push(const T& v) {
-        { lock_guard<mutex> lk(m); q.push(v); }
-        cv.notify_one();
-    }
-    // pop(): returns false if queue empty & done()
-    bool pop(T& out) {
-        unique_lock<mutex> lk(m);
-        cv.wait(lk, [&]{ return done || !q.empty(); });
-        if (q.empty()) return false;
-        out = q.front(); q.pop();
-        return true;
-    }
-    void finish() {
-        { lock_guard<mutex> lk(m); done = true; }
-        cv.notify_all();
-    }
-};
-// ————————————————————————
+
 
 static const string BASE_URL = 
     "http://hollywood-graph-crawler.bridgesuncc.org/neighbors/";

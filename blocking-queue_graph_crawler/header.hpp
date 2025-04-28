@@ -2,46 +2,48 @@
 #include <queue>
 #include <mutex>
 #include <condition_variable>
-#include <optional>
 
+// A thread-safe blocking queue matching push/pop/finish API
 template<typename T>
 class BlockingQueue {
 private:
     std::queue<T>           queue_;
     mutable std::mutex      mutex_;
-    std::condition_variable cond_var_;
+    std::condition_variable cv_;
     bool                    finished_ = false;
 
 public:
-    // enqueue a new item
-    void enqueue(const T& item) {
-        std::lock_guard<std::mutex> lock(mutex_);
-        queue_.push(item);
-        cond_var_.notify_one();
+    // Enqueue a new item
+    void push(const T& item) {
+        {
+            std::lock_guard<std::mutex> lk(mutex_);
+            queue_.push(item);
+        }
+        cv_.notify_one();
     }
 
-    // try to dequeue; returns false if the queue is empty and closed
-    bool try_dequeue(T& out) {
-        std::unique_lock<std::mutex> lock(mutex_);
-        cond_var_.wait(lock, [this]{ return finished_ || !queue_.empty(); });
+    // Block until an item is available or finish() called; returns false if done and empty
+    bool pop(T& out) {
+        std::unique_lock<std::mutex> lk(mutex_);
+        cv_.wait(lk, [this]{ return finished_ || !queue_.empty(); });
         if (queue_.empty()) return false;
-        out = queue_.front();
+        out = std::move(queue_.front());
         queue_.pop();
         return true;
     }
 
-    // signal that no more items will be added
-    void close() {
+    // Signal that no more items will be added, unblocking all waiting threads
+    void finish() {
         {
-            std::lock_guard<std::mutex> lock(mutex_);
+            std::lock_guard<std::mutex> lk(mutex_);
             finished_ = true;
         }
-        cond_var_.notify_all();
+        cv_.notify_all();
     }
 
-    // check if empty (at the moment of the call)
+    // Check whether the queue is empty (non-blocking)
     bool empty() const {
-        std::lock_guard<std::mutex> lock(mutex_);
+        std::lock_guard<std::mutex> lk(mutex_);
         return queue_.empty();
     }
 };
