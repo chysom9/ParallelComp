@@ -3,5 +3,10 @@
         "activityBar.background": "#372C09",
         "titleBar.activeBackground": "#4D3E0C",
         "titleBar.activeForeground": "#FCF9F0"
+    },
+    "files.associations": {
+        "*.cpp": "cpp",
+        "filesystem": "cpp",
+        "queue": "cpp"
     }
 }

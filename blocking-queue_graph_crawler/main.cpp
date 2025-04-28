@@ -1,151 +1,86 @@
 #include <iostream>
 #include <string>
 #include <vector>
-#include <queue>
 #include <unordered_set>
 #include <thread>
 #include <mutex>
-#include <condition_variable>
 #include <atomic>
 #include <chrono>
 #include <fstream>
 #include <filesystem>
 #include <curl/curl.h>
-#include <stdexcept>
-#include "rapidjson/error/error.h"
-#include "rapidjson/reader.h"
-#include <rapidjson/document.h>
+#include"rapidjson/document.h"
 
 using namespace std;
 using namespace rapidjson;
 
-// ---- your existing JSON / curl helpers ----
-
-struct ParseException : runtime_error, ParseResult {
-    ParseException(ParseErrorCode c, const char* m, size_t o)
-      : runtime_error(m), ParseResult(c, o) {}
-};
-#define RAPIDJSON_PARSE_ERROR_NORETURN(code, offset) \
-    throw ParseException(code, #code, offset)
-
-bool debug = false;
-const string SERVICE_URL = "http://hollywood-graph-crawler.bridgesuncc.org/neighbors/";
-
-string url_encode(CURL* curl, const string& input) {
-    char* out = curl_easy_escape(curl, input.c_str(), (int)input.size());
-    string s = out; curl_free(out);
-    return s;
-}
-
-size_t WriteCallback(void* contents, size_t size, size_t nmemb, string* output) {
-    size_t total = size * nmemb;
-    output->append((char*)contents, total);
-    return total;
-}
-
-string fetch_neighbors(CURL* curl, const string& node) {
-    string url = SERVICE_URL + url_encode(curl, node);
-    string response;
-    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
-    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-    struct curl_slist* headers = nullptr;
-    headers = curl_slist_append(headers, "User-Agent: ParallelCrawler/1.0");
-    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-
-    CURLcode res = curl_easy_perform(curl);
-    if (res != CURLE_OK)
-        cerr << "CURL error: " << curl_easy_strerror(res) << endl;
-    curl_slist_free_all(headers);
-    return (res == CURLE_OK) ? response : "{}";
-}
-
-vector<string> get_neighbors(const string& json_str) {
-    vector<string> neighbors;
-    Document doc;
-    doc.Parse(json_str.c_str());
-    if (doc.HasParseError())
-        RAPIDJSON_PARSE_ERROR_NORETURN(doc.GetParseError(), doc.GetErrorOffset());
-    if (doc.HasMember("neighbors") && doc["neighbors"].IsArray()) {
-        for (auto& v : doc["neighbors"].GetArray())
-            neighbors.push_back(v.GetString());
-    }
-    return neighbors;
-}
-
-// ---- blocking queue & BFS ----
-
+// ——— Simple BlockingQueue<T> ———
 template<typename T>
 class BlockingQueue {
+    queue<T>       q;
+    mutex          m;
+    condition_variable cv;
+    bool           done{false};
 public:
-    void push(const T& x) {
-        { lock_guard<mutex> lk(m); q.push(x); }
+    void push(const T& v) {
+        { lock_guard<mutex> lk(m); q.push(v); }
         cv.notify_one();
     }
+    // pop(): returns false if queue empty & done()
     bool pop(T& out) {
         unique_lock<mutex> lk(m);
-        cv.wait(lk, [&]{ return closed || !q.empty(); });
+        cv.wait(lk, [&]{ return done || !q.empty(); });
         if (q.empty()) return false;
         out = q.front(); q.pop();
         return true;
     }
-    void close() {
-        { lock_guard<mutex> lk(m); closed = true; }
+    void finish() {
+        { lock_guard<mutex> lk(m); done = true; }
         cv.notify_all();
     }
-private:
-    queue<T> q; mutex m; condition_variable cv; bool closed = false;
 };
+// ————————————————————————
 
-struct Node { string name; int depth; };
+static const string BASE_URL = 
+    "http://hollywood-graph-crawler.bridgesuncc.org/neighbors/";
+static const int    MAX_THREADS = 4;
 
-const int MAX_THREADS = 4;
+// libcurl write callback
+static size_t WriteCb(void* data, size_t sz, size_t nm, string* out) {
+    out->append((char*)data, sz * nm);
+    return sz * nm;
+}
 
-vector<string> parallel_bfs(const string& start, int maxDepth) {
-    BlockingQueue<Node> workQ;
-    unordered_set<string> visited;
-    mutex visitM, resultM;
-    vector<string> result;
-    atomic<int> tasks{1};
+// Fetch & parse neighbors in one go
+vector<string> get_neighbors(const string& node) {
+    vector<string> nbrs;
+    CURL* curl = curl_easy_init();
+    if (!curl) return nbrs;
 
-    visited.insert(start);
-    workQ.push({start, 0});
+    // build URL with escaping
+    char* esc = curl_easy_escape(curl, node.c_str(), (int)node.size());
+    string url = BASE_URL + esc;
+    curl_free(esc);
 
-    auto worker = [&]{
-        CURL* curl = curl_easy_init();
-        Node cur;
-        while (workQ.pop(cur)) {
-            // record
-            {
-                lock_guard<mutex> lk(resultM);
-                result.push_back(cur.name);
-            }
-            // expand
-            if (cur.depth < maxDepth) {
-                auto js = fetch_neighbors(curl, cur.name);
-                for (auto& n : get_neighbors(js)) {
-                    lock_guard<mutex> lk(visitM);
-                    if (!visited.count(n)) {
-                        visited.insert(n);
-                        tasks++;
-                        workQ.push({n, cur.depth + 1});
-                    }
-                }
-            }
-            if (--tasks == 0) 
-                workQ.close();
-        }
-        curl_easy_cleanup(curl);
-    };
+    // perform HTTP GET
+    string resp;
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCb);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &resp);
+    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, "ParallelCrawler/1.0");
+    curl_easy_perform(curl);
+    curl_easy_cleanup(curl);
 
-    vector<thread> threads;
-    for (int i = 0; i < MAX_THREADS; ++i)
-        threads.emplace_back(worker);
-    for (auto& t : threads) 
-        t.join();
-
-    return result;
+    // parse JSON
+    Document doc;
+    doc.Parse(resp.c_str());
+    if (doc.HasMember("neighbors") && doc["neighbors"].IsArray()) {
+        for (auto& v : doc["neighbors"].GetArray())
+            if (v.IsString())
+                nbrs.emplace_back(v.GetString());
+    }
+    return nbrs;
 }
 
 int main(int argc, char* argv[]) {
@@ -154,28 +89,66 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     string start = argv[1];
-    int depth = stoi(argv[2]);
+    int    maxD  = stoi(argv[2]);
 
-    // ensure output dir
+    // ensure output folder exists
     filesystem::create_directories("output");
 
+    // shared data
+    BlockingQueue<pair<string,int>> queue;
+    unordered_set<string>           visited;
+    vector<string>                  output;
+    mutex                           lock;
+    atomic<int>                     inFlight{1};
+
+    // seed BFS
+    visited.insert(start);
+    queue.push({start, 0});
+
+    // worker threads
+    auto worker = [&]() {
+        pair<string,int> cur;
+        while (queue.pop(cur)) {
+            auto [node, depth] = cur;
+
+            {   // record node
+                lock_guard<mutex> lk(lock);
+                output.push_back(node);
+            }
+
+            if (depth < maxD) {
+                for (auto& nbr : get_neighbors(node)) {
+                    lock_guard<mutex> lk(lock);
+                    if (visited.insert(nbr).second) {
+                        ++inFlight;
+                        queue.push({nbr, depth + 1});
+                    }
+                }
+            }
+
+            if (--inFlight == 0)
+                queue.finish();
+        }
+    };
+
+    // launch & time
     auto t0 = chrono::steady_clock::now();
-    auto nodes = parallel_bfs(start, depth);
+    vector<thread> thr;
+    for (int i = 0; i < MAX_THREADS; ++i)
+        thr.emplace_back(worker);
+    for (auto& t : thr) t.join();
     auto t1 = chrono::steady_clock::now();
     double elapsed = chrono::duration<double>(t1 - t0).count();
 
-    // stdout
-    for (auto& n : nodes)
-        cout << "- " << n << "\n";
-    cout << "Time to crawl: " << elapsed << "s\n";
+    // console output
+    for (auto& n : output)
+        cout << "-> " << n << "\n";
+    cout << "Timer: " << elapsed << " Seconds\n";
 
-    // write to file
-    string fname = "output/" + start + "_depth" + to_string(depth) + ".txt";
-    ofstream ofs(fname);
-    for (auto& n : nodes) 
-        ofs << n << "\n";
-    ofs << "Time: " << elapsed << "s\n";
-    ofs.close();
+    // file dump
+    ofstream ofs("output/" + start + "_depth" + to_string(maxD) + ".txt");
+    for (auto& n : output) ofs << n << "\n";
+    ofs << "It took: " << elapsed << " Seconds to run\n" ;
 
     return 0;
 }

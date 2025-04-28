@@ -1,12 +1,14 @@
-#CXXFLAGS=-I ~/prgs/rapidjson/include
-LDFLAGS=-lcurl
-LD=g++
-CC=g++
+CXX= g++
+CXXFLAGS= -std=c++17 -Wall -I/usr/local/include
+LDFLAGS= -lcurl -pthread
 
-all: client
+TARGET= main
+SRCS= main.cpp
 
-client: client.o
-	$(LD) $< -o $@ $(LDFLAGS)
+all: $(TARGET)
+
+$(TARGET): $(SRCS)
+	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS)
 
 clean:
-	-rm client client.o
+	rm -f main *.o output/*.txt
